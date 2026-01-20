@@ -421,16 +421,68 @@ Pods with requests in the queue will get score between 0.5 and 0.
 
 #### ActiveRequestScorer
 
-Scores pods based on the number of active requests being served per pod. Each request is tracked 
-individually with its own TTL to ensure accurate timeout handling. Pods with fewer active 
+Scores pods based on the number of active requests being served per pod. Each request is tracked
+individually with its own TTL to ensure accurate timeout handling. Pods with fewer active
 requests receive higher scores.
 
 Scores are normalized to a range of 0-1, where pods with fewer active requests get higher scores.
 
 - **Type**: `active-request-scorer`
 - **Parameters**:
-  - `requestTimeout`: specifies the timeout for requests in seconds. Once a request is "in-flight" 
+  - `requestTimeout`: specifies the timeout for requests in seconds. Once a request is "in-flight"
     for this duration, it is considered timed out and automatically removed.
+
+---
+
+#### InputSizeScorer
+
+Scores pods based on the total input size of active requests being served per pod. This scorer
+tracks the cumulative input size (in characters) across all in-flight requests for each pod,
+helping to balance load based on actual workload rather than just request count.
+
+The score is calculated using the formula:
+
+```
+Score = (Max - InputSize) / Max
+```
+
+Where:
+- `Max` is the maximum total input size across all tracked pods
+- `InputSize` is the total input size for the pod being scored
+
+Pods with lower total input sizes receive higher scores (closer to 1.0), while pods with higher
+total input sizes receive lower scores (closer to 0.0). Pods with no active requests receive
+the highest score (1.0). This helps distribute workload more evenly when requests have varying
+prompt lengths.
+
+Input size is calculated as:
+- For ChatCompletions requests: sum of all message content lengths
+- For Completions requests: length of the prompt
+
+- **Type**: `input-size-scorer`
+- **Parameters**:
+  - `requestTimeout`: specifies the timeout for requests. Once a request is "in-flight"
+    for this duration, it is considered timed out and automatically removed. Accepts duration
+    strings like "30s", "1m", "2h". Defaults to 2 minutes.
+
+Example configuration:
+
+```yaml
+plugins:
+  - type: input-size-scorer
+    parameters:
+      requestTimeout: "2m"
+  - type: decode-filter
+  - type: max-score-picker
+  - type: single-profile-handler
+schedulingProfiles:
+  - name: default
+    plugins:
+      - pluginRef: decode-filter
+      - pluginRef: max-score-picker
+      - pluginRef: input-size-scorer
+        weight: 2
+```
 
 ---
 
